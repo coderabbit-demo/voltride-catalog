@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# voltride-catalog both produces contracts (consumed by voltride-cart,
+# voltride-notifications, voltride-frontend) and consumes contracts
+# (voltride-inventory, voltride-pricing) via hand-maintained local copies in
+# src/types.ts. No compiler spans the repo boundary — wire-format changes
+# are only ever caught by review.
+
+language: "en-US"
+
+tone_instructions: >-
+  Prioritize cross-repo compatibility over style. When this service's HTTP
+  contract changes, name every consumer repository and file that breaks and
+  the runtime symptom. Never rate a contract change low risk because the
+  diff is small.
+
+reviews:
+  profile: "assertive"
+  high_level_summary: true
+  request_changes_workflow: true
+
+  path_instructions:
+    - path: "**"
+      instructions: >-
+        Treat ANY change to a wire-format element this repo produces — a
+        JSON field name, field type or unit, endpoint path or method, or
+        status code — as a BREAKING CHANGE for the linked repositories, and
+        enumerate every consumer exhaustively (one broken consumer does not
+        end the analysis). GET /api/products/:id/summary (id, name,
+        basePriceCents, category) is decoded by coderabbit-demo/voltride-cart
+        (src/clients/catalogClient.ts — a renamed basePriceCents propagates
+        as undefined into pricing requests and fails add-to-cart with a 422
+        two repos away) and coderabbit-demo/voltride-notifications
+        (catalog_client.py reads "name" for email copy). GET /api/products
+        and /api/products/:id are decoded by
+        coderabbit-demo/voltride-frontend (src/api/catalog.ts). Severity for
+        an unaccompanied contract change is CRITICAL — the blast radius lives
+        in other repositories, so a small diff means higher risk, not lower.
+        Semantic changes (units, sign conventions) are just as breaking as
+        renames.
+    - path: "src/types.ts"
+      instructions: >-
+        Contains this repo's local copies of the voltride-inventory stock
+        record and voltride-pricing quote shapes. Flag any edit that drifts
+        from what those producer repos actually serve, and any edit to the
+        produced response interfaces without coordinated consumer updates.
+    - path: "src/clients/**"
+      instructions: >-
+        HTTP clients for voltride-inventory and voltride-pricing. Verify
+        request/response field names match the producer repos exactly;
+        TypeScript cannot check this across repos.
+
+  labeling_instructions:
+    - label: "breaking-change"
+      instructions: >-
+        Apply when the PR changes any wire-format element of this service's
+        HTTP API that the linked consumer repositories decode.
+    - label: "cross-repo-impact"
+      instructions: >-
+        Apply when a change here alters the runtime behavior of another
+        VoltRide repo, even if every payload still parses.
+
+  pre_merge_checks:
+    custom_checks:
+      - name: "Cross-repo contract compatibility"
+        mode: "error"
+        instructions: >-
+          FAIL this check if the PR modifies any wire-format element this
+          service produces (JSON field name/type/unit, endpoint path/method,
+          status code) or silently drifts its local copies of the
+          voltride-inventory / voltride-pricing contracts. Consumers live in
+          the linked repositories (voltride-cart, voltride-notifications,
+          voltride-frontend) and CANNOT be fixed in this PR, so a
+          producer-side contract change may only PASS when the PR description
+          links coordinated pull requests updating every affected consumer
+          repo, or the change is demonstrably additive.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+  linked_repositories:
+    - repository: "coderabbit-demo/voltride-inventory"
+      instructions: >-
+        Producer this repo consumes: stock records (stockCount,
+        restockEtaDays) decoded in src/clients/inventoryClient.ts and
+        src/types.ts.
+    - repository: "coderabbit-demo/voltride-pricing"
+      instructions: >-
+        Producer this repo consumes: quotes (lineItems[].unitPriceCents,
+        discountPercent) decoded in src/clients/pricingClient.ts for product
+        detail pricing.
+    - repository: "coderabbit-demo/voltride-cart"
+      instructions: >-
+        Consumer of this repo's GET /api/products/:id/summary
+        (src/clients/catalogClient.ts): validates products and forwards
+        basePriceCents to pricing.
+    - repository: "coderabbit-demo/voltride-notifications"
+      instructions: >-
+        Consumer of this repo's GET /api/products/:id/summary
+        (catalog_client.py): reads product names for confirmation emails.
+    - repository: "coderabbit-demo/voltride-frontend"
+      instructions: >-
+        Consumer of this repo's product list and detail endpoints
+        (src/api/catalog.ts) for the storefront grid and detail pages.
