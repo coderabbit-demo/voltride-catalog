@@ -42,7 +42,7 @@ app.get("/api/products/:id/summary", (req, res) => {
   const summary: ProductSummaryResponse = {
     id: product.id,
     name: product.name,
-    basePriceCents: product.basePriceCents,
+    priceCents: product.basePriceCents,
     category: product.category,
   };
   res.json(summary);
